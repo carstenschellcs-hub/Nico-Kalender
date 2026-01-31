@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gruppen-Kalender ab 12.08.2023</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; line-height: 1.35; }
+    .card { max-width: 720px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 16px; }
+    h1 { margin: 0 0 12px 0; font-size: 22px; }
+    .big { font-size: 28px; font-weight: 700; margin: 10px 0 16px 0; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .pill { padding: 10px 12px; background: #f6f6f6; border-radius: 12px; }
+    .muted { color: #666; font-size: 14px; }
+    code { background:#f2f2f2; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Eigene Zeitrechnung ab <span id="epochPretty"></span></h1>
+    <div class="big" id="headline">Lade…</div>
+
+    <div class="row">
+      <div class="pill"><strong>Heute (normal):</strong> <span id="todayPretty"></span></div>
+      <div class="pill"><strong>Tage seit Beginn:</strong> <span id="daysSince"></span></div>
+    </div>
+
+    <p class="muted" style="margin-top:14px">
+      Logik: <code>Jahre/Monate/Tage</code> werden kalendarisch gerechnet (echte Monatslängen).
+      „Jahr 1“ beginnt am Startdatum.
+    </p>
+  </div>
+
+  <script>
+    // === Einstellungen ===
+    // Startdatum: 12. August 2023 (lokale Zeit)
+    const EPOCH = new Date(2023, 7, 12); // Monat: 0=Jan ... 7=Aug
+
+    // Hilfsfunktionen
+    const pad2 = (n) => String(n).padStart(2, "0");
+
+    function prettyDate(d) {
+      const day = pad2(d.getDate());
+      const month = pad2(d.getMonth() + 1);
+      const year = d.getFullYear();
+      return `${day}.${month}.${year}`;
+    }
+
+    // Setzt Zeit auf Mitternacht, damit Tagesdifferenzen sauber sind
+    function atMidnight(d) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+
+    // Addiere Monate (kalendarisch), dabei "clampen" wir auf Monatsende,
+    // falls der Zielmonat weniger Tage hat als der Ausgangstag.
+    function addMonthsClamped(date, monthsToAdd) {
+      const y = date.getFullYear();
+      const m = date.getMonth();
+      const d = date.getDate();
+
+      const targetMonthIndex = m + monthsToAdd;
+      const targetYear = y + Math.floor(targetMonthIndex / 12);
+      const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+
+      // letzter Tag des Zielmonats
+      const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+      const targetDay = Math.min(d, lastDay);
+
+      return new Date(targetYear, targetMonth, targetDay);
+    }
+
+    // Kerndiff: gibt {years, months, days} seit EPOCH zurück (kalendarisch)
+    function diffYMD(fromDate, toDate) {
+      // Erwartung: fromDate <= toDate
+      let years = 0, months = 0, days = 0;
+
+      // 1) Jahre: so viele ganze Jahre addieren wie möglich
+      let cursor = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+      while (true) {
+        const next = new Date(cursor.getFullYear() + 1, cursor.getMonth(), cursor.getDate());
+        // clamp falls 29. Feb etc.
+        const clampedNext = (next.getMonth() !== cursor.getMonth())
+          ? new Date(next.getFullYear(), next.getMonth(), 0)
+          : next;
+
+        if (clampedNext <= toDate) {
+          cursor = clampedNext;
+          years++;
+        } else break;
+      }
+
+      // 2) Monate: so viele ganze Monate addieren wie möglich
+      while (true) {
+        const next = addMonthsClamped(cursor, 1);
+        if (next <= toDate) {
+          cursor = next;
+          months++;
+        } else break;
+      }
+
+      // 3) Tage: Rest in Tagen
+      const msPerDay = 24 * 60 * 60 * 1000;
+      days = Math.floor((toDate - cursor) / msPerDay);
+
+      return { years, months, days };
+    }
+
+    function plural(n, singular, pluralForm) {
+      return n === 1 ? singular : pluralForm;
+    }
+
+    function render() {
+      const today = atMidnight(new Date());
+      const start = atMidnight(EPOCH);
+
+      document.getElementById("epochPretty").textContent = prettyDate(start);
+      document.getElementById("todayPretty").textContent = prettyDate(today);
+
+      if (today < start) {
+        document.getElementById("headline").textContent =
+          `Startdatum liegt in der Zukunft.`;
+        document.getElementById("daysSince").textContent = "—";
+        return;
+      }
+
+      const { years, months, days } = diffYMD(start, today);
+
+      // „Jahr 1“ beginnt am Startdatum => Anzeigejahr = years + 1
+      const displayYear = years + 1;
+
+      const headline =
+        `Heute ist das ${displayYear}. Jahr mit ${months} ${plural(months,"Monat","Monaten")} und ${days} ${plural(days,"Tag","Tagen")}.`;
+
+      document.getElementById("headline").textContent = headline;
+
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const daysSince = Math.floor((today - start) / msPerDay);
+      document.getElementById("daysSince").textContent = `${daysSince}`;
+    }
+
+    render();
+    // Optional: täglich um 00:00 neu rendern (hier alle 60s check)
+    setInterval(render, 60_000);
+  </script>
+</body>
+</html>
